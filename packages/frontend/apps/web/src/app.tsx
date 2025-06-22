@@ -19,6 +19,11 @@ import { Framework, FrameworkRoot, getCurrentStore } from '@toeverything/infra';
 import { OpClient } from '@toeverything/infra/op';
 import { Suspense } from 'react';
 import { RouterProvider } from 'react-router-dom';
+import ChatwootLoader from './components/ChatwootLoader';
+import { defaultTenantConfig, type TenantConfig } from './tenant/types';
+import { fetchTenantConfig } from './tenant';
+import { useEffect, useState } from 'react';
+import { applyTenantBranding } from './tenant/applyTenantBranding';
 
 const cache = createEmotionCache();
 
@@ -83,7 +88,41 @@ window.addEventListener('focus', () => {
 });
 frameworkProvider.get(LifecycleService).applicationStart();
 
+function getTenantFromURL(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('tenant');
+}
+
 export function App() {
+  const [config, setConfig] = useState<TenantConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tenant = getTenantFromURL();
+
+    if (!tenant) {
+      setError('No tenant specified in URL.');
+      setConfig(defaultTenantConfig);
+      return;
+    }
+
+    fetchTenantConfig(tenant)
+      .then(config => {
+        setConfig(config);
+        applyTenantBranding(config);
+      })
+      .catch(() => {
+        console.warn('Falling back to default config');
+        setConfig(defaultTenantConfig);
+        applyTenantBranding(defaultTenantConfig);
+        setError(`Using default config. Failed to load for tenant: ${tenant}`);
+      });
+  }, []);
+
+  if (!config) {
+    return <div>Loading...</div>;
+  }
+
   return (
     <Suspense>
       <FrameworkRoot framework={frameworkProvider}>
@@ -94,6 +133,10 @@ export function App() {
                 fallbackElement={<AppContainer fallback />}
                 router={router}
                 future={future}
+              />
+              <ChatwootLoader
+                baseUrl={config.chatwoot.baseUrl}
+                websiteToken={config.chatwoot.websiteToken}
               />
             </AffineContext>
           </I18nProvider>
